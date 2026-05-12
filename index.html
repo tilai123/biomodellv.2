@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="sv">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Movie Sentiment AI | Pink Edition</title>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs"></script>
+    <style>
+        :root {
+            --bg-dark: #0f0c29;
+            --card-bg: #1a1a2e;
+            --pink-accent: #ff2e63;
+            --pink-glow: #ff2e63;
+            --text-light: #e0e0e0;
+        }
+
+        body {
+            margin: 0;
+            padding: 0;
+            font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+            background: linear-gradient(135deg, #0f0c29, #302b63, #24243e);
+            color: var(--text-light);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+        }
+
+        .container {
+            width: 90%;
+            max-width: 600px;
+            background: var(--card-bg);
+            padding: 2.5rem;
+            border-radius: 20px;
+            box-shadow: 0 15px 35px rgba(0,0,0,0.5), 0 0 15px rgba(255, 46, 99, 0.2);
+            border: 1px solid rgba(255, 46, 99, 0.1);
+            text-align: center;
+        }
+
+        h1 {
+            color: var(--pink-accent);
+            font-size: 2.2rem;
+            margin-bottom: 0.5rem;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            text-shadow: 0 0 10px rgba(255, 46, 99, 0.5);
+        }
+
+        p.subtitle {
+            color: #888;
+            margin-bottom: 2rem;
+        }
+
+        textarea {
+            width: 100%;
+            height: 150px;
+            background: #111;
+            border: 2px solid #333;
+            border-radius: 12px;
+            padding: 15px;
+            color: white;
+            font-size: 1rem;
+            resize: none;
+            box-sizing: border-box;
+            transition: border-color 0.3s ease, box-shadow 0.3s ease;
+            outline: none;
+        }
+
+        textarea:focus {
+            border-color: var(--pink-accent);
+            box-shadow: 0 0 10px rgba(255, 46, 99, 0.3);
+        }
+
+        #analyze-btn {
+            margin-top: 1.5rem;
+            background: var(--pink-accent);
+            color: white;
+            border: none;
+            padding: 12px 30px;
+            font-size: 1.1rem;
+            font-weight: bold;
+            border-radius: 30px;
+            cursor: pointer;
+            transition: transform 0.2s, background 0.3s, box-shadow 0.3s;
+            width: 100%;
+        }
+
+        #analyze-btn:hover {
+            background: #ff4d7d;
+            box-shadow: 0 0 20px rgba(255, 46, 99, 0.6);
+            transform: translateY(-2px);
+        }
+
+        #analyze-btn:disabled {
+            background: #555;
+            cursor: not-allowed;
+        }
+
+        #result {
+            margin-top: 2rem;
+            padding: 1rem;
+            border-radius: 10px;
+            font-weight: bold;
+            font-size: 1.2rem;
+            display: none;
+            animation: fadeIn 0.5s ease;
+        }
+
+        .positive {
+            background: rgba(46, 255, 113, 0.1);
+            color: #2eff71;
+            border: 1px solid #2eff71;
+        }
+
+        .negative {
+            background: rgba(255, 46, 99, 0.1);
+            color: var(--pink-accent);
+            border: 1px solid var(--pink-accent);
+        }
+
+        .status {
+            font-size: 0.8rem;
+            margin-top: 1rem;
+            color: #666;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h1>Movie Review AI</h1>
+    <p class="subtitle">Analysera din recension med maskininlärning</p>
+    
+    <textarea id="review-input" placeholder="Skriv din recension här (på engelska)..."></textarea>
+    
+    <button id="analyze-btn" disabled>Laddar AI-modell...</button>
+    
+    <div id="result"></div>
+    <div id="status" class="status">Ansluter till TensorFlow.js...</div>
+</div>
+
+<script>
+    let model;
+    let metadata;
+    const MAX_LENGTH = 256; // Baserat på metadata.json
+
+    async function init() {
+        try {
+            // Ladda modell och metadata från samma mapp
+            model = await tf.loadLayersModel('model.json');
+            const response = await fetch('metadata.json');
+            metadata = await response.json();
+            
+            document.getElementById('status').innerText = "Modell laddad och redo!";
+            document.getElementById('analyze-btn').innerText = "Analysera sentiment";
+            document.getElementById('analyze-btn').disabled = false;
+        } catch (error) {
+            document.getElementById('status').innerText = "Fel vid laddning: " + error.message;
+            console.error(error);
+        }
+    }
+
+    function preprocess(text) {
+        // Enkel tokenisering baserad på word_index
+        const words = text.toLowerCase().replace(/[^\w\s]/g, '').split(/\s+/);
+        const sequence = words.map(word => {
+            const index = metadata.word_index[word];
+            return index ? parseInt(index) : parseInt(metadata.word_index["<OOV>"]);
+        });
+
+        // Padding/Truncating till 256 ord
+        const paddedSequence = new Array(MAX_LENGTH).fill(0);
+        for (let i = 0; i < Math.min(sequence.length, MAX_LENGTH); i++) {
+            paddedSequence[i] = sequence[i];
+        }
+        return tf.tensor2d([paddedSequence]);
+    }
+
+    async function analyze() {
+        const inputElement = document.getElementById('review-input');
+        const resultElement = document.getElementById('result');
+        const text = inputElement.value;
+
+        if (!text.trim()) return;
+
+        const inputTensor = preprocess(text);
+        const prediction = model.predict(inputTensor);
+        const score = await prediction.data();
+
+        resultElement.style.display = 'block';
+        // Om score > 0.5 anses det ofta vara positivt i binär klassificering
+        if (score[0] > 0.5) {
+            resultElement.innerText = `Positiv Recension (Sannolikhet: ${(score[0]*100).toFixed(1)}%)`;
+            resultElement.className = 'positive';
+        } else {
+            resultElement.innerText = `Negativ Recension (Sannolikhet: ${((1-score[0])*100).toFixed(1)}%)`;
+            resultElement.className = 'negative';
+        }
+    }
+
+    document.getElementById('analyze-btn').addEventListener('click', analyze);
+    init();
+</script>
+
+</body>
+</html>
